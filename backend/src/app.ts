@@ -8,11 +8,13 @@ import { jwtAuth } from "./middleware/jwtAuth";
 import { errorHandler } from "./middleware/errorHandler";
 import { asyncHandler } from "./middleware/asyncHandler";
 import { healthChecker } from "./healthCheck";
+import { getMetrics, getMetricsContentType } from "./monitoring";
 import authRoutes from "./routes/auth";
 import inspectRoutes from "./routes/inspect";
 import approvalsRoutes from "./routes/approvals";
 import auditRoutes from "./routes/audit";
 import configRoutes from "./routes/config";
+import workflowsRoutes from "./routes/workflows";
 
 /**
  * Parse ALLOWED_ORIGINS environment variable
@@ -65,7 +67,7 @@ export function createApp(): express.Application {
           callback(new Error(`CORS: origin "${origin}" not allowed`));
         }
       },
-      methods: ["GET", "POST", "DELETE"],
+      methods: ["GET", "POST", "PUT", "DELETE"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Api-Key"],
       credentials: true,
     })
@@ -88,6 +90,10 @@ export function createApp(): express.Application {
     })
   );
 
+  app.get("/metrics", asyncHandler(async (_req, res) => {
+    res.type(getMetricsContentType()).send(await getMetrics());
+  }));
+
   // ── Auth routes (no auth needed) ─────────────────────────────────────────
   app.use("/auth", authRoutes);
 
@@ -96,12 +102,14 @@ export function createApp(): express.Application {
   app.use("/approvals", jwtAuth);
   app.use("/audit", jwtAuth);
   app.use("/config", jwtAuth);
+  app.use("/workflows", jwtAuth);
 
   // ── Routes ────────────────────────────────────────────────────────────────
   app.use("/inspect", inspectRoutes);
   app.use("/approvals", approvalsRoutes);
   app.use("/audit", auditRoutes);
   app.use("/config", configRoutes);
+  app.use("/workflows", workflowsRoutes);
 
   // ── 404 handler ───────────────────────────────────────────────────────────
   app.use((_req, res) => {

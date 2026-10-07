@@ -237,3 +237,215 @@ export async function updateShieldConfig(
   })
   return response.config
 }
+
+// ─── Workflows ───────────────────────────────────────────────────────────────
+
+export type WorkflowTriggerType =
+  | "tool_call"
+  | "pull_request"
+  | "agent_execution"
+  | "prompt_submission"
+  | "manual"
+  | "webhook";
+
+export type WorkflowStepType =
+  | "secret_detection"
+  | "prompt_injection_scan"
+  | "tool_permission_check"
+  | "code_policy_check"
+  | "risk_assessment"
+  | "human_approval_gate"
+  | "dlp_data_masking"
+  | "webhook_dispatch"
+  | "custom_rule_eval";
+
+export type WorkflowStepAction = "block" | "require_approval" | "warn" | "continue";
+
+export interface WorkflowStepConfig {
+  threshold?: number;
+  strict?: boolean;
+  actionOnFailure?: WorkflowStepAction;
+  patterns?: string[];
+  allowedTools?: string[];
+  blockedTools?: string[];
+  approverRole?: string;
+  timeoutMs?: number;
+  webhookUrl?: string;
+  customCondition?: string;
+}
+
+export interface WorkflowStep {
+  id: string;
+  name: string;
+  type: WorkflowStepType;
+  enabled: boolean;
+  description?: string;
+  config: WorkflowStepConfig;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string;
+  trigger: WorkflowTriggerType;
+  enabled: boolean;
+  steps: WorkflowStep[];
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  version: number;
+}
+
+export interface WorkflowFinding {
+  rule: string;
+  reason: string;
+  severity?: "low" | "medium" | "high" | "critical";
+  details?: Record<string, unknown>;
+}
+
+export interface WorkflowRunStepResult {
+  stepId: string;
+  stepName: string;
+  stepType: WorkflowStepType;
+  status: "passed" | "blocked" | "require_approval" | "warning" | "skipped" | "failed";
+  latencyMs: number;
+  findings: WorkflowFinding[];
+  details: Record<string, unknown>;
+  sanitizedPayloadSnapshot?: Record<string, unknown>;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  trigger: WorkflowTriggerType;
+  status: "completed" | "blocked" | "require_approval" | "failed";
+  finalDecision: "allow" | "block" | "require_approval";
+  inputPayload: Record<string, unknown>;
+  outputPayload?: Record<string, unknown>;
+  stepResults: WorkflowRunStepResult[];
+  totalLatencyMs: number;
+  approvalRequestId?: string;
+  createdAt: string;
+  executedBy?: string;
+}
+
+export interface CreateWorkflowInput {
+  name: string;
+  description: string;
+  trigger: WorkflowTriggerType;
+  enabled?: boolean;
+  steps: Array<{
+    name: string;
+    type: WorkflowStepType;
+    enabled?: boolean;
+    description?: string;
+    config?: WorkflowStepConfig;
+  }>;
+}
+
+export interface UpdateWorkflowInput {
+  name?: string;
+  description?: string;
+  trigger?: WorkflowTriggerType;
+  enabled?: boolean;
+  steps?: Array<{
+    id?: string;
+    name: string;
+    type: WorkflowStepType;
+    enabled?: boolean;
+    description?: string;
+    config?: WorkflowStepConfig;
+  }>;
+}
+
+export async function getWorkflows(
+  token: string
+): Promise<{ count: number; workflows: Workflow[] }> {
+  return request("/workflows", token);
+}
+
+export async function getWorkflow(
+  id: string,
+  token: string
+): Promise<Workflow> {
+  return request(`/workflows/${id}`, token);
+}
+
+export async function getWorkflowTemplates(
+  token: string
+): Promise<{ count: number; templates: Array<Omit<Workflow, "id" | "createdAt" | "updatedAt" | "version">> }> {
+  return request("/workflows/templates", token);
+}
+
+export async function createWorkflow(
+  input: CreateWorkflowInput,
+  token: string
+): Promise<{ message: string; workflow: Workflow }> {
+  return request("/workflows", token, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateWorkflow(
+  id: string,
+  input: UpdateWorkflowInput,
+  token: string
+): Promise<{ message: string; workflow: Workflow }> {
+  return request(`/workflows/${id}`, token, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteWorkflow(
+  id: string,
+  token: string
+): Promise<{ message: string }> {
+  return request(`/workflows/${id}`, token, {
+    method: "DELETE",
+  });
+}
+
+export async function toggleWorkflow(
+  id: string,
+  token: string
+): Promise<{ message: string; workflow: Workflow }> {
+  return request(`/workflows/${id}/toggle`, token, {
+    method: "POST",
+  });
+}
+
+export async function runWorkflow(
+  id: string,
+  payload: Record<string, unknown>,
+  token: string
+): Promise<{ message: string; run: WorkflowRun }> {
+  return request(`/workflows/${id}/run`, token, {
+    method: "POST",
+    body: JSON.stringify({ payload }),
+  });
+}
+
+export async function executeCustomWorkflow(
+  workflow: Partial<Workflow>,
+  payload: Record<string, unknown>,
+  token: string
+): Promise<{ message: string; run: WorkflowRun }> {
+  return request("/workflows/execute-custom", token, {
+    method: "POST",
+    body: JSON.stringify({ workflow, payload }),
+  });
+}
+
+export async function getWorkflowRuns(
+  token: string,
+  workflowId?: string,
+  limit = 50
+): Promise<{ count: number; runs: WorkflowRun[] }> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (workflowId) params.set("workflowId", workflowId);
+  return request(`/workflows/runs?${params.toString()}`, token);
+}
+

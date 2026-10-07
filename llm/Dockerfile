@@ -19,13 +19,13 @@ RUN pip install --no-cache-dir --upgrade pip setuptools
 RUN pip install --no-cache-dir \
     fastapi==0.104.1 \
     uvicorn==0.24.0 \
-    ollama==0.1.26 \
-    pydantic==2.5.0 \
+    ollama==0.6.3 \
+    pydantic==2.9.2 \
     pydantic-settings==2.1.0 \
     python-multipart==0.0.6
 
 # Copy application code
-COPY llm/*.py ./
+COPY llm ./llm
 
 # Create logs directory
 RUN mkdir -p /app/logs && chown llm:llm /app/logs
@@ -41,4 +41,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 EXPOSE 8000
 
 # Start application
-CMD ["uvicorn", "fastapi_server:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]
+CMD ["uvicorn", "llm.fastapi_server:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]

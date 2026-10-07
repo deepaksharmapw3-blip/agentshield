@@ -9,6 +9,8 @@ __v0_jsx-dev-runtime.ts
 # Environment variables
 .env*.local
 .env
+nginx/.htpasswd
+nginx/ssl/*.pem
 
 # Python ignores
 __pycache__/
