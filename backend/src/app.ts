@@ -13,6 +13,8 @@ import inspectRoutes from "./routes/inspect";
 import approvalsRoutes from "./routes/approvals";
 import auditRoutes from "./routes/audit";
 import configRoutes from "./routes/config";
+import mcpConnectionRoutes from "./routes/mcp";          // agent connect/approve/reject
+import { buildMcpRouter } from "./mcpServer";             // MCP proxy (tools)
 
 /**
  * Parse ALLOWED_ORIGINS environment variable
@@ -90,6 +92,17 @@ export function createApp(): express.Application {
 
   // ── Auth routes (no auth needed) ─────────────────────────────────────────
   app.use("/auth", authRoutes);
+
+  // ── MCP connection mgmt (agent connect/approve/reject + SSE) — no auth ───
+  // These are the "connect before you have tools" handshake endpoints.
+  app.use("/mcp", mcpConnectionRoutes);
+
+  // ── MCP Proxy — the actual MCP protocol endpoint (no auth, self-contained)
+  // Helmet's CSP blocks event-stream; remove that header for this path only.
+  app.use("/mcp", (_req, _res, next) => {
+    _res.removeHeader("Content-Security-Policy");
+    next();
+  }, buildMcpRouter());
 
   // ── JWT auth for all protected routes ────────────────────────────────────
   app.use("/inspect", jwtAuth);

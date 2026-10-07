@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle, Bell, Check, ChevronRight, CircleDot,
@@ -13,6 +13,8 @@ import { useRealtimeApprovals, useRealtimeAudit } from './hooks/useRealtimeEvent
 import {
   getAuditStats, getAuditLog, getApprovals, getShieldConfig, updateShieldConfig,
   approveRequest, rejectRequest, inspectToolCall,
+  getMcpConnections, approveMcpConnection, rejectMcpConnection,
+  type AuditStats, type AuditEntry, type ApprovalRequest, type AgentConnection
   type AuditStats, type AuditEntry, type ApprovalRequest, type ShieldConfig
 } from '@/lib/api'
 
@@ -61,38 +63,206 @@ function Logo() {
   )
 }
 
+// ─── MCP Agent Connection Modal ───────────────────────────────────────────────
+function AgentConnectionModal({
+  conn,
+  onApprove,
+  onReject,
+}: {
+  conn: AgentConnection
+  onApprove: (id: string) => void
+  onReject: (id: string) => void
+}) {
+  const [acting, setActing] = useState<'approve' | 'reject' | null>(null)
+
+  async function handleApprove() {
+    setActing('approve')
+    try { await approveMcpConnection(conn.id); onApprove(conn.id) }
+    catch (e) { alert(e instanceof Error ? e.message : 'Error'); setActing(null) }
+  }
+
+  async function handleReject() {
+    setActing('reject')
+    try { await rejectMcpConnection(conn.id); onReject(conn.id) }
+    catch (e) { alert(e instanceof Error ? e.message : 'Error'); setActing(null) }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        background: '#0b1220', border: '1px solid #1b2a40',
+        borderRadius: 12, width: 420, padding: '1.75rem',
+        boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
+        animation: 'slideUp 0.2s ease',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.25rem' }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 8,
+            background: '#1683ff1a', border: '1px solid #1683ff55',
+            display: 'grid', placeItems: 'center', color: '#58b1ff',
+          }}>
+            <ShieldCheck size={16} />
+          </div>
+          <div>
+            <span style={{ display: 'block', color: '#58b1ff', fontSize: '0.7rem', fontFamily: 'ui-monospace,monospace', letterSpacing: '0.12em', fontWeight: 700 }}>
+              🔐 NEW AGENT CONNECTION
+            </span>
+          </div>
+        </div>
+
+        {/* Agent info */}
+        <div style={{ background: '#070b14', border: '1px solid #1b2a40', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+            <div>
+              <p style={{ margin: 0, fontWeight: 700, fontSize: '1.1rem', letterSpacing: '-0.03em' }}>{conn.agentName}</p>
+              <p style={{ margin: '0.25rem 0 0', color: '#70819a', fontSize: '0.75rem', fontFamily: 'ui-monospace,monospace' }}>
+                Type: {conn.agentType}
+              </p>
+            </div>
+            <span style={{
+              background: '#f59e0b1a', border: '1px solid #f59e0b55',
+              color: '#f59e0b', fontSize: '0.7rem', fontFamily: 'ui-monospace,monospace',
+              padding: '3px 8px', borderRadius: 3, fontWeight: 700,
+            }}>PENDING</span>
+          </div>
+          <p style={{ margin: '0 0 0.75rem', color: '#9aa8bd', fontSize: '0.78rem', fontFamily: 'ui-monospace,monospace' }}>
+            MCP Server: <b style={{ color: '#d9e6f7' }}>{conn.mcpServer}</b>
+          </p>
+          <div>
+            <p style={{ margin: '0 0 0.4rem', color: '#70819a', fontSize: '0.7rem', fontFamily: 'ui-monospace,monospace', letterSpacing: '0.1em' }}>
+              REQUESTED ACCESS
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+              {conn.requestedTools.map(t => (
+                <span key={t} style={{
+                  background: '#1683ff12', border: '1px solid #1683ff44',
+                  color: '#58b1ff', fontSize: '0.72rem', fontFamily: 'ui-monospace,monospace',
+                  padding: '3px 8px', borderRadius: 3,
+                }}>✓ {t}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: '0.6rem' }}>
+          <button
+            onClick={handleReject}
+            disabled={acting !== null}
+            style={{
+              flex: 1, padding: '0.65rem', borderRadius: 6,
+              border: '1px solid #ef444455', background: 'transparent',
+              color: '#ff8888', fontFamily: 'ui-monospace,monospace',
+              fontSize: '0.8rem', fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer',
+              opacity: acting === 'approve' ? 0.4 : 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+            }}
+          >
+            {acting === 'reject' ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+            Reject
+          </button>
+          <button
+            onClick={handleApprove}
+            disabled={acting !== null}
+            style={{
+              flex: 1, padding: '0.65rem', borderRadius: 6,
+              border: '1px solid #22c55e', background: '#22c55e18',
+              color: '#22c55e', fontFamily: 'ui-monospace,monospace',
+              fontSize: '0.8rem', fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer',
+              opacity: acting === 'reject' ? 0.4 : 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+            }}
+          >
+            {acting === 'approve' ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            Approve
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Header({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) {
   const { username, logout, accessToken } = useAuth()
   const router = useRouter()
   const [showNotifications, setShowNotifications] = useState(false)
   const [notifications, setNotifications] = useState<Array<{id: string; type: string; text: string; time: string}>>([])
+  // Track IDs we have already seen so we only count genuinely new events
+  const seenIdsRef = useRef<Set<string>>(new Set())
   const [unread, setUnread] = useState(0)
+
+  // MCP connection queue — shown as modal popups one at a time
+  const [pendingConns, setPendingConns] = useState<AgentConnection[]>([])
 
   // Load live notifications from backend audit log
   const loadNotifications = useCallback(async () => {
     if (!accessToken) return
     try {
       const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002'
-      const res = await fetch(`${BASE_URL}/audit?limit=5`, {
+      const res = await fetch(`${BASE_URL}/audit?limit=10`, {
         headers: { Authorization: `Bearer ${accessToken}` }
       })
       if (!res.ok) return
       const data = await res.json()
-      const entries = data.entries ?? []
+      const entries: AuditEntry[] = data.entries ?? []
       const mapped = entries.map((e: AuditEntry) => ({
         id: e.id,
         type: e.decision === 'block' ? 'danger' : e.decision === 'require_approval' ? 'warn' : 'success',
         text: `${e.decision === 'block' ? '🚫 Blocked' : e.decision === 'require_approval' ? '⚠️ Review' : '✅ Allowed'}: ${e.tool} by ${e.agentId ?? 'agent'} (risk ${e.riskScore})`,
         time: new Date(e.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }))
+
+      // Count only IDs we haven't seen before
+      const newCount = mapped.filter(n => !seenIdsRef.current.has(n.id)).length
+      if (newCount > 0) setUnread(prev => prev + newCount)
+      mapped.forEach(n => seenIdsRef.current.add(n.id))
+
       setNotifications(mapped)
-      setUnread(mapped.length)
     } catch { /* silent */ }
   }, [accessToken])
 
+  // Subscribe to MCP SSE for instant agent connection popups
+  useEffect(() => {
+    const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002'
+    const es = new EventSource(`${BASE_URL}/mcp/events`)
+
+    es.addEventListener('snapshot', (e) => {
+      const conns: AgentConnection[] = JSON.parse(e.data)
+      if (conns.length > 0) setPendingConns(prev => {
+        const existingIds = new Set(prev.map(c => c.id))
+        return [...prev, ...conns.filter(c => !existingIds.has(c.id))]
+      })
+    })
+
+    es.addEventListener('connection_request', (e) => {
+      const conn: AgentConnection = JSON.parse(e.data)
+      setPendingConns(prev => {
+        if (prev.some(c => c.id === conn.id)) return prev
+        return [...prev, conn]
+      })
+      // Also add to notification bell
+      const notif = {
+        id: `mcp-${conn.id}`,
+        type: 'warn',
+        text: `🔐 New agent connection: ${conn.agentName} (${conn.agentType})`,
+        time: new Date(conn.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }
+      setNotifications(prev => [notif, ...prev].slice(0, 10))
+      setUnread(prev => prev + 1)
+    })
+
+    es.onerror = () => { /* SSE reconnects automatically */ }
+    return () => es.close()
+  }, []) // mount once — SSE handles reconnection
+
   useEffect(() => {
     void loadNotifications()
-    const id = window.setInterval(loadNotifications, 10000)
+    const id = window.setInterval(loadNotifications, 8000)
     return () => window.clearInterval(id)
   }, [loadNotifications])
 
@@ -102,81 +272,127 @@ function Header({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => voi
     router.push('/login')
   }
 
+  function dismissConn(id: string) {
+    setPendingConns(prev => prev.filter(c => c.id !== id))
+  }
+
   return (
-    <header className="topbar" style={{ position: 'relative' }}>
-      <Logo />
-      <div className="topbar-meta">
-        <span className="env">LOCAL <b>/</b> DEVELOPMENT</span>
-        <span className="system"><i /> SYSTEM OPERATIONAL</span>
-        <div className="flex items-center gap-3" style={{ position: 'relative' }}>
-          {username && (
-            <span className="text-sm px-3 py-1 bg-blue-600/20 text-blue-300 rounded border border-blue-500/30">
-              {username}
-            </span>
-          )}
+    <>
+      {/* MCP connection modal — show one at a time */}
+      {pendingConns[0] && (
+        <AgentConnectionModal
+          key={pendingConns[0].id}
+          conn={pendingConns[0]}
+          onApprove={(id) => {
+            dismissConn(id)
+            const notif = {
+              id: `mcp-approved-${id}`,
+              type: 'success',
+              text: `✅ Agent connection approved: ${pendingConns[0]?.agentName ?? id}`,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            }
+            setNotifications(prev => [notif, ...prev].slice(0, 10))
+          }}
+          onReject={(id) => {
+            dismissConn(id)
+            const notif = {
+              id: `mcp-rejected-${id}`,
+              type: 'danger',
+              text: `🚫 Agent connection rejected: ${pendingConns[0]?.agentName ?? id}`,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            }
+            setNotifications(prev => [notif, ...prev].slice(0, 10))
+          }}
+        />
+      )}
 
-          {/* Live Notification Bell */}
-          <div style={{ position: 'relative' }}>
-            <button
-              className="icon-button"
-              aria-label="Notifications"
-              onClick={() => { setShowNotifications(v => !v); setUnread(0); void loadNotifications() }}
-            >
-              <Bell size={17} />
-              {unread > 0 && (
-                <span style={{
-                  position: 'absolute', top: -4, right: -4,
-                  background: '#ef4444', borderRadius: '50%',
-                  width: 15, height: 15, fontSize: 9,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'white', fontWeight: 700,
-                }}>{unread > 9 ? '9+' : unread}</span>
-              )}
-            </button>
+      <header className="topbar" style={{ position: 'relative' }}>
+        <Logo />
+        <div className="topbar-meta">
+          <span className="env">LOCAL <b>/</b> DEVELOPMENT</span>
+          <span className="system"><i /> SYSTEM OPERATIONAL</span>
+          <div className="flex items-center gap-3" style={{ position: 'relative' }}>
+            {username && (
+              <span className="text-sm px-3 py-1 bg-blue-600/20 text-blue-300 rounded border border-blue-500/30">
+                {username}
+              </span>
+            )}
 
-            {showNotifications && (
-              <div style={{
-                position: 'absolute', top: '110%', right: 0, zIndex: 1000,
-                background: '#0f172a', border: '1px solid #1e293b',
-                borderRadius: 10, width: 320, boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-              }}>
-                <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Live Notifications</span>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <button onClick={() => void loadNotifications()} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><RefreshCw size={12} /></button>
-                    <button onClick={() => setShowNotifications(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={14} /></button>
-                  </div>
-                </div>
-                {notifications.length === 0 ? (
-                  <p style={{ padding: '1rem', opacity: 0.4, fontSize: '0.8rem', textAlign: 'center' }}>No recent events</p>
-                ) : notifications.map(n => (
-                  <div key={n.id} style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #0f1929', display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', marginTop: 5, flexShrink: 0, background: n.type === 'danger' ? '#ef4444' : n.type === 'warn' ? '#f59e0b' : '#22c55e' }} />
-                    <div style={{ flex: 1 }}>
-                      <p style={{ margin: 0, fontSize: '0.78rem', color: '#e2e8f0', lineHeight: 1.4 }}>{n.text}</p>
-                      <span style={{ fontSize: '0.68rem', color: '#64748b' }}>{n.time}</span>
+            {/* Live Notification Bell */}
+            <div style={{ position: 'relative' }}>
+              <button
+                className="icon-button"
+                aria-label="Notifications"
+                onClick={() => {
+                  setShowNotifications(v => !v)
+                  setUnread(0)
+                  void loadNotifications()
+                }}
+              >
+                <Bell size={17} />
+                {unread > 0 && (
+                  <span style={{
+                    position: 'absolute', top: -4, right: -4,
+                    background: '#ef4444', borderRadius: '50%',
+                    width: 16, height: 16, fontSize: 9,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'white', fontWeight: 700,
+                    animation: 'bellPulse 1.2s ease infinite',
+                  }}>{unread > 9 ? '9+' : unread}</span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div style={{
+                  position: 'absolute', top: '110%', right: 0, zIndex: 1000,
+                  background: '#0b1220', border: '1px solid #1b2a40',
+                  borderRadius: 10, width: 340, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                }}>
+                  <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #1b2a40', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Live Notifications</span>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <button onClick={() => void loadNotifications()} title="Refresh" style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex' }}>
+                        <RefreshCw size={12} />
+                      </button>
+                      <button onClick={() => setShowNotifications(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex' }}>
+                        <X size={14} />
+                      </button>
                     </div>
                   </div>
-                ))}
-                <div style={{ padding: '0.5rem 1rem', textAlign: 'center', borderTop: '1px solid #1e293b' }}>
-                  <button onClick={() => setShowNotifications(false)} style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '0.8rem', cursor: 'pointer' }}>
-                    View all in Live Monitor →
-                  </button>
+                  {notifications.length === 0 ? (
+                    <p style={{ padding: '1.25rem 1rem', opacity: 0.4, fontSize: '0.8rem', textAlign: 'center', margin: 0 }}>No recent events</p>
+                  ) : notifications.map(n => (
+                    <div key={n.id} style={{ padding: '0.65rem 1rem', borderBottom: '1px solid #0f1929', display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                      <div style={{
+                        width: 8, height: 8, borderRadius: '50%', marginTop: 5, flexShrink: 0,
+                        background: n.type === 'danger' ? '#ef4444' : n.type === 'warn' ? '#f59e0b' : '#22c55e',
+                      }} />
+                      <div style={{ flex: 1 }}>
+                        <p style={{ margin: 0, fontSize: '0.78rem', color: '#e2e8f0', lineHeight: 1.4 }}>{n.text}</p>
+                        <span style={{ fontSize: '0.68rem', color: '#64748b' }}>{n.time}</span>
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ padding: '0.5rem 1rem', textAlign: 'center', borderTop: '1px solid #1b2a40' }}>
+                    <button onClick={() => setShowNotifications(false)} style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '0.8rem', cursor: 'pointer' }}>
+                      View all in Live Monitor →
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* Logout */}
-          <button className="icon-button" aria-label="Logout" onClick={handleLogout} title="Logout" style={{ color: '#f87171' }}>
-            <LogOut size={17} />
-          </button>
+            {/* Logout */}
+            <button className="icon-button" aria-label="Logout" onClick={handleLogout} title="Logout" style={{ color: '#f87171' }}>
+              <LogOut size={17} />
+            </button>
+          </div>
         </div>
-      </div>
-      <button className="menu-button" onClick={() => setOpen(!open)} aria-label={open ? 'Close navigation' : 'Open navigation'}>
-        {open ? <X size={22} /> : <Menu size={22} />}
-      </button>
-    </header>
+        <button className="menu-button" onClick={() => setOpen(!open)} aria-label={open ? 'Close navigation' : 'Open navigation'}>
+          {open ? <X size={22} /> : <Menu size={22} />}
+        </button>
+      </header>
+    </>
   )
 }
 
@@ -622,9 +838,11 @@ function MonitorPage() {
                 <code>{e.tool}</code>
                 <span>{e.riskLevel}</span>
                 <Badge tone={e.decision === 'block' ? 'danger' : e.decision === 'require_approval' ? 'warn' : 'success'}>
-                  {e.decision === 'require_approval' ? 'REVIEW' : e.decision.toUpperCase()}
+                  {e.decision === 'require_approval' ? 'REQUIRE_APPROVAL' : e.decision.toUpperCase()}
                 </Badge>
-                <b>RISK {e.riskScore}</b>
+                <b style={{ color: e.riskScore >= 80 ? '#ef4444' : e.riskScore >= 50 ? '#f59e0b' : '#22c55e' }}>
+                  RISK {e.riskScore}
+                </b>
               </div>
             ))}
           </div>

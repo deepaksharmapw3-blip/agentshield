@@ -223,6 +223,47 @@ export async function getAuditStats(token: string): Promise<AuditStats> {
   return request("/audit/stats", token);
 }
 
+// ─── MCP Agent Connections ────────────────────────────────────────────────────
+
+export interface AgentConnection {
+  id: string;
+  agentName: string;
+  agentType: string;
+  mcpServer: string;
+  requestedTools: string[];
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+}
+
+export async function getMcpConnections(
+  status?: "pending" | "approved" | "rejected"
+): Promise<{ count: number; connections: AgentConnection[] }> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  const qs = params.toString();
+  return request(`/mcp/connections${qs ? `?${qs}` : ""}`);
+}
+
+export async function approveMcpConnection(
+  id: string,
+  resolvedBy = "operator"
+): Promise<{ message: string; connection: AgentConnection }> {
+  return request(`/mcp/connection/${id}/approve`, undefined, {
+    method: "POST",
+    body: JSON.stringify({ resolvedBy }),
+  });
+}
+
+export async function rejectMcpConnection(
+  id: string,
+  resolvedBy = "operator"
+): Promise<{ message: string; connection: AgentConnection }> {
+  return request(`/mcp/connection/${id}/reject`, undefined, {
+    method: "POST",
+    body: JSON.stringify({ resolvedBy }),
+  });
 export async function getShieldConfig(token: string): Promise<ShieldConfig> {
   return request("/config", token)
 }
