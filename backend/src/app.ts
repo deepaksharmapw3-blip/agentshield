@@ -85,7 +85,7 @@ export function createApp(): express.Application {
     "/health",
     asyncHandler(async (_req, res) => {
       const health = await healthChecker.checkSystemHealth();
-      const statusCode = health.status === "healthy" ? 200 : 503;
+      const statusCode = health.status === "healthy" || health.status === "degraded" ? 200 : 503;
       res.status(statusCode).json(health);
     })
   );

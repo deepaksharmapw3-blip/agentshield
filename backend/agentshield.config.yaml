@@ -27,6 +27,11 @@ tools:
     description: "File deletion is high risk — require approval"
     require_approval: true
 
+  - name: "execute_command"
+    risk_score: 75
+    description: "Shell command execution is high risk"
+    require_approval: true
+
   - name: "execute_pwsh"
     risk_score: 90
     description: "Shell command execution is very high risk"
@@ -35,6 +40,11 @@ tools:
   - name: "execute_bash"
     risk_score: 90
     description: "Shell command execution is very high risk"
+    require_approval: true
+
+  - name: "exec_*"
+    risk_score: 75
+    description: "Execution tool patterns require approval"
     require_approval: true
 
   - name: "web_fetch"

@@ -8,6 +8,7 @@
 import { getLLMService } from './llmService';
 import { getDb } from './auditLogger';
 import { logger } from './logger';
+import { getHeapStatistics } from 'v8';
 
 const CTX = 'HealthCheck';
 
@@ -52,10 +53,10 @@ class HealthChecker {
 
       const health: ComponentHealth = {
         name: 'LLM Service',
-        status: available ? 'healthy' : 'unhealthy',
+        status: available ? 'healthy' : 'degraded',
         message: available
           ? 'LLM service and Ollama are operational'
-          : 'LLM service or Ollama is unavailable',
+          : 'LLM service offline — fallback deterministic rules active',
         lastCheck: new Date().toISOString(),
         responseTime,
       };
@@ -66,8 +67,8 @@ class HealthChecker {
       const responseTime = Date.now() - startTime;
       const health: ComponentHealth = {
         name: 'LLM Service',
-        status: 'unhealthy',
-        message: `Error checking LLM service: ${error instanceof Error ? error.message : String(error)}`,
+        status: 'degraded',
+        message: `LLM service offline (${error instanceof Error ? error.message : String(error)}) — fallback deterministic rules active`,
         lastCheck: new Date().toISOString(),
         responseTime,
       };
@@ -164,8 +165,8 @@ class HealthChecker {
 
     try {
       const memUsage = process.memoryUsage();
-      const heapUsedPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
-      const externalPercent = (memUsage.external / (memUsage.heapTotal + memUsage.external)) * 100;
+      const heapLimit = getHeapStatistics().heap_size_limit;
+      const heapUsedPercent = (memUsage.heapUsed / heapLimit) * 100;
 
       let status: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
       let message = `Memory usage: ${heapUsedPercent.toFixed(1)}% heap`;
